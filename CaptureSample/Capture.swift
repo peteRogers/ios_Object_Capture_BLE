@@ -100,7 +100,7 @@ struct Capture: Identifiable {
         let gravityString =
             String(format: "%lf,%lf,%lf", gravityVector.x, gravityVector.y, gravityVector.z)
         let gravityUrl = CaptureInfo.gravityUrl(in: captureDir, id: id)
-        logger.log("Writing gravity metadata to: \"\(gravityUrl.path)\"...")
+       // logger.log("Writing gravity metadata to: \"\(gravityUrl.path)\"...")
         do {
             try gravityString.write(toFile: gravityUrl.path, atomically: true,
                                     encoding: .utf8)
@@ -121,7 +121,7 @@ struct Capture: Identifiable {
         }
         
         let depthMapUrl = CaptureInfo.depthUrl(in: captureDir, id: id)
-        logger.log("Writing depth data to path=\"\(depthMapUrl.path)\"...")
+       // logger.log("Writing depth data to path=\"\(depthMapUrl.path)\"...")
         do {
             try depthMapData.write(to: URL(fileURLWithPath: depthMapUrl.path), options: .atomic)
             return true

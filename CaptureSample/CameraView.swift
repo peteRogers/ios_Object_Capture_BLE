@@ -14,7 +14,7 @@ struct CameraView: View {
     
     @ObservedObject var model: CameraViewModel
     @State private var showInfo: Bool = false
-    
+    @State var exposureVal:Float = 0.0
     let aspectRatio: CGFloat = 4.0 / 3.0
     let previewCornerRadius: CGFloat = 15.0
     
@@ -53,6 +53,10 @@ struct CameraView: View {
                                 .padding(.horizontal).padding(.top)
                         }
                         Spacer()
+                        Slider(value: $exposureVal, in: 0 ... 1, step: 0.01).onChange(of: self.exposureVal) { newProgress in
+                            
+                            model.setExposure(level: newProgress)
+                        }
                         CaptureButtonPanelView(model: model, width: geometryReader.size.width)
                     }
                 }
@@ -68,13 +72,19 @@ struct CameraView: View {
 /// This view displays the image thumbnail, capture button, and capture mode button.
 struct CaptureButtonPanelView: View {
     @ObservedObject var model: CameraViewModel
-    
+   
     /// This property stores the full width of the bar. The view uses this to place items.
     var width: CGFloat
     
     var body: some View {
         // Add the bottom panel, which contains the thumbnail and capture button.
         ZStack(alignment: .center) {
+            
+            
+          
+            
+            
+            
             HStack {
                 ThumbnailView(model: model)
                     .frame(width: width / 3)
@@ -90,8 +100,9 @@ struct CaptureButtonPanelView: View {
                 Spacer()
                 CaptureModeButton(model: model,
                                   frameWidth: width / 3)
-                    .padding(.horizontal)
+                .padding(.horizontal)
             }
+            
         }
     }
 }

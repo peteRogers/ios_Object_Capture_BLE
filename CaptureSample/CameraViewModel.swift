@@ -19,6 +19,7 @@ private let logger = Logger(subsystem: "com.apple.sample.CaptureSample",
 /// to that state. The app's views observe this object and update themseves to reflect changes.
 class CameraViewModel: ObservableObject {
     var session: AVCaptureSession
+    var ble: BLEController
 
     enum CaptureMode {
         /// The user has selected manual capture mode, which captures one
@@ -29,10 +30,15 @@ class CameraViewModel: ObservableObject {
         /// image every specified interval.
         case automatic(everySecs: Double)
     }
-
+    
+    private let kExposureDurationPower = 5.0 // Higher numbers will give the slider more sensitivity at shorter durations
+    private let kExposureMinimumDuration = 1.0/1000 // Limit exposure duration to a useful range
+    
+   
     /// This property holds a reference to the most recently captured image and its metadata. The app
     /// uses this to populate the thumbnail view.
     @Published var lastCapture: Capture? = nil
+    @Published var exposureLevel: Float = 0.0
 
     /// Returns`true` if there's a camera available.`
     @Published var isCameraAvailable: Bool = false
@@ -107,15 +113,55 @@ class CameraViewModel: ObservableObject {
     static let maxPhotosAllowed = 250
     static let recommendedMinPhotos = 30
     static let recommendedMaxPhotos = 200
-    static let defaultAutomaticCaptureIntervalSecs: Double = 3.0
+    static let defaultAutomaticCaptureIntervalSecs: Double = 2.0
 
     init() {
         session = AVCaptureSession()
-
+        ble = BLEController()
         // This is an asynchronous call that begins all setup. It sets
         // up the camera device, motion device (gravity), and ensures correct
         // permissions.
         startSetup()
+    }
+    
+    func launchBLE(){
+        print("launch ble")
+        ble.connect()
+        ble.connectionChanged = { [unowned self] value in
+            let v = value as connectionStatus
+            if(v == .disconnected){
+//                //self.quitCamera()
+//                stateLabel.isHidden = true
+//                labelSlider.isHidden = true
+//                slider.isHidden = true
+//                labelArduinoData.isHidden = true
+                print("disconnected")
+            }
+            if(v == .connected){
+//                stateLabel.isHidden = false
+//                //labelSlider.isHidden = false
+//                //slider.isHidden = false
+//                labelArduinoData.isHidden = false
+                print("connected")
+            }
+            //self.stateManager(state: value)
+            // stateView?.setStatus(con: v)
+            
+        }
+        ble.arduinoData = {[unowned self] value in
+          
+            //let out = map(Float(v), 80, 400, 0, 32.4)
+            //let out = map(value: v, minRange: 80, maxRange: 400, minDomain: 0, maxDomain: 32)
+           // print(out)
+//            labelArduinoData.text = "\(v)"
+//            if(v < 1){
+//                self.incomingData = 0
+//            }else{
+//                self.incomingData = v - 0.99
+//            }
+           print(value)
+      
+        }
     }
 
     /// This method advances through the available capture modes, updating `captureMode`.
@@ -397,6 +443,7 @@ class CameraViewModel: ObservableObject {
                 photoCaptureProcessor.requestedPhotoSettings.uniqueID] = photoCaptureProcessor
             logger.log("inProgressCaptures=\(self.inProgressPhotoCaptureDelegates.count)")
             self.photoOutput.capturePhoto(with: photoSettings, delegate: photoCaptureProcessor)
+            self.ble.sendData(message: 1)
         }
     }
 
@@ -438,13 +485,14 @@ class CameraViewModel: ObservableObject {
         }
         triggerEveryTimer!.start()
         isAutoCaptureActive = true
+        launchBLE()
     }
 
     /// This method stops the automatic capture timer.
     private func stopAutomaticCapture() {
         dispatchPrecondition(condition: .onQueue(.main))
         logger.log("Stop Auto Capture!")
-
+        ble.disconnect()
         isAutoCaptureActive = false
         triggerEveryTimer?.stop()
     }
@@ -481,10 +529,34 @@ class CameraViewModel: ObservableObject {
             setupResult = .notAuthorized
         }
     }
+    
+    public func setExposure(level:Float){
+        print(level)
+        if let vi = self.videoDeviceInput{
+            do{
+                try vi.device.lockForConfiguration()
+                let p = pow(Double(level), kExposureDurationPower) // Apply power function to expand slider's low-end range
+                let minDurationSeconds = max(CMTimeGetSeconds(vi.device.activeFormat.minExposureDuration), kExposureMinimumDuration)
+                let maxDurationSeconds = CMTimeGetSeconds(vi.device.activeFormat.maxExposureDuration)
+                let newDurationSeconds = p * ( maxDurationSeconds - minDurationSeconds ) + minDurationSeconds; // Scale from 0-1 slider range to actual duration
+                
+              // print("\(vi.device.activeFormat.minISO) : : : \(vi.device.activeFormat.maxISO)")
+                vi.device.setExposureModeCustom(duration: CMTimeMakeWithSeconds(newDurationSeconds, preferredTimescale: 1000*1000*1000), iso: vi.device.activeFormat.minISO, completionHandler: nil)
+                   
+               
+                
+                
+                vi.device.unlockForConfiguration()
+                
+            }catch{
+                logger.error("Configuring exposure failed failed")
+            }
+        }
+    }
 
     private func configureSession() {
         // Make sure setup hasn't failed.
-        guard setupResult == .inProgress else {
+        guard setupResult == .inProgress  || setupResult == .success else {
             logger.error("Setup failed, can't configure session!  result=\(String(describing: self.setupResult))")
             return
         }
@@ -498,7 +570,7 @@ class CameraViewModel: ObservableObject {
         do {
             let videoDeviceInput = try AVCaptureDeviceInput(
                 device: getVideoDeviceForPhotogrammetry())
-
+            
             if session.canAddInput(videoDeviceInput) {
                 session.addInput(videoDeviceInput)
                 self.videoDeviceInput = videoDeviceInput
@@ -507,6 +579,49 @@ class CameraViewModel: ObservableObject {
                 setupResult = .configurationFailed
                 return
             }
+//            if( videoDeviceInput.device.isExposureModeSupported(.custom)){
+//                print("can change iso")
+//            }else{
+//                print("no iso ")
+//            }
+//            if(videoDeviceInput.device.isFocusModeSupported(.locked)){
+//                print("manual focus")
+//            }
+//            if(videoDeviceInput.device.isExposureModeSupported(.)){
+//                print("manual exposure")
+//            }
+            
+            try videoDeviceInput.device.lockForConfiguration()
+               
+            videoDeviceInput.device.focusMode = .continuousAutoFocus
+            
+           
+            videoDeviceInput.device.setExposureModeCustom(duration: AVCaptureDevice.currentExposureDuration, iso:videoDeviceInput.device.activeFormat.maxISO, completionHandler: nil)
+           // videoDeviceInput.device.setExposureModeCustom(duration: CMTime(value: 100, timescale: 2000), iso: AVCaptureDevice.currentISO)
+            
+           // videoDeviceInput.device.focusMode = .locked
+            //videoDeviceInput.device.focusPointOfInterest =
+                videoDeviceInput.device.unlockForConfiguration()
+            try videoDeviceInput.device.lockForConfiguration()
+            let p = pow(Double(exposureLevel), kExposureDurationPower) // Apply power function to expand slider's low-end range
+            let minDurationSeconds = max(CMTimeGetSeconds(videoDeviceInput.device.activeFormat.minExposureDuration), kExposureMinimumDuration)
+            let maxDurationSeconds = CMTimeGetSeconds(videoDeviceInput.device.activeFormat.maxExposureDuration)
+            let newDurationSeconds = p * ( maxDurationSeconds - minDurationSeconds ) + minDurationSeconds; // Scale from 0-1 slider range to actual duration
+            
+           print("\(videoDeviceInput.device.activeFormat.minISO) : : : \(videoDeviceInput.device.activeFormat.maxISO)")
+            videoDeviceInput.device.setExposureModeCustom(duration: CMTimeMakeWithSeconds(newDurationSeconds, preferredTimescale: 1000*1000*1000), iso: videoDeviceInput.device.activeFormat.minISO, completionHandler: nil)
+               
+           
+            
+            
+            videoDeviceInput.device.unlockForConfiguration()
+            
+            
+            //video
+            
+            
+            
+            
         } catch {
             logger.error("Couldn't create video device input: \(String(describing: error))")
             setupResult = .configurationFailed
@@ -551,18 +666,19 @@ class CameraViewModel: ObservableObject {
     private func getVideoDeviceForPhotogrammetry() throws -> AVCaptureDevice {
         var defaultVideoDevice: AVCaptureDevice?
 
-        // Specify dual camera to get access to depth data.
-        if let dualCameraDevice = AVCaptureDevice.default(.builtInDualCamera, for: .video,
-                                                          position: .back) {
-            logger.log(">>> Got back dual camera!")
-            defaultVideoDevice = dualCameraDevice
-        } else if let dualWideCameraDevice = AVCaptureDevice.default(.builtInDualWideCamera,
-                                                                for: .video,
-                                                                position: .back) {
-            logger.log(">>> Got back dual wide camera!")
-            defaultVideoDevice = dualWideCameraDevice
-       } else if let backWideCameraDevice = AVCaptureDevice.default(.builtInWideAngleCamera,
-                                                                     for: .video,
+//        // Specify dual camera to get access to depth data.
+//        if let dualCameraDevice = AVCaptureDevice.default(.builtInDualCamera, for: .video,
+//                                                          position: .back) {
+//            logger.log(">>> Got back dual camera!")
+//            defaultVideoDevice = dualCameraDevice
+//        } else if let dualWideCameraDevice = AVCaptureDevice.default(.builtInDualWideCamera,
+//                                                                for: .video,
+//                                                                position: .back) {
+//            logger.log(">>> Got back dual wide camera!")
+//            defaultVideoDevice = dualWideCameraDevice
+//       } else
+        if let backWideCameraDevice = AVCaptureDevice.default(.builtInWideAngleCamera,
+                                                                    for: .video,
                                                                      position: .back) {
             logger.log(">>> Can't find a depth-capable camera: using wide back camera!")
             defaultVideoDevice = backWideCameraDevice

@@ -32,12 +32,14 @@ class TriggerEveryTimer {
     }
     
     func start() {
+        print("timer started")
         lastTriggerTime = Date()
         timerHandle = Timer.publish(every: updateEverySecs, on: .main, in: .common)
             .autoconnect()
             .sink(receiveValue: { date in
                 let timeToGoSecs = self.triggerEverySecs -
                     date.timeIntervalSince(self.lastTriggerTime)
+                //print("foof \(timeToGoSecs)")
                 if timeToGoSecs <= 0 {
                     self.onTrigger?()
                     self.lastTriggerTime = date

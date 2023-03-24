@@ -53,9 +53,11 @@ class PhotoCaptureProcessor: NSObject {
         self.willCapturePhotoAnimation = willCapturePhotoAnimation
         self.completionHandler = completionHandler
         self.photoProcessingHandler = photoProcessingHandler
+        //print("started the photo processor")
     }
     
     private func didFinish() {
+       
         completionHandler(self)
     }
 }
@@ -126,7 +128,7 @@ extension PhotoCaptureProcessor: AVCapturePhotoCaptureDelegate {
     func photoOutput(_ output: AVCapturePhotoOutput,
                      didFinishCaptureFor resolvedSettings: AVCaptureResolvedPhotoSettings,
                      error: Error?) {
-        print("DidFinishCapture!")
+       
         
         // Call the completion handler when done.
         defer { didFinish() }
